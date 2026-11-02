@@ -72,7 +72,9 @@ static bool world_pos(const Vec3& p) {
     return true;
 }
 
-static bool is_battle_manager(pid_t pid, uintptr_t inst) {
+static bool read_dict(pid_t pid, uintptr_t dict, std::vector<uintptr_t>& out);
+
+static bool is_battle_manager(pid_t pid, uintptr_t inst, Vec3* outPos = nullptr, int* outCount = nullptr) {
     if (!heap_ptr(inst)) return false;
     uintptr_t local = 0, dict = 0;
     if (!rpm_t(pid, inst + Off::LocalPlayerShow, local) || !heap_ptr(local)) return false;
@@ -81,7 +83,28 @@ static bool is_battle_manager(pid_t pid, uintptr_t inst) {
     if (!rpm_t(pid, local + Off::LastPosition, pos) || !world_pos(pos)) return false;
     int count = 0;
     if (!rpm_t(pid, dict + Off::DictCount, count) || count <= 0 || count > 16) return false;
+    if (outPos) *outPos = pos;
+    if (outCount) *outCount = count;
     return true;
+}
+
+static int count_usable(pid_t pid, uintptr_t inst) {
+    uintptr_t local = 0, dict = 0;
+    rpm_t(pid, inst + Off::LocalPlayerShow, local);
+    rpm_t(pid, inst + Off::DicPlayerShow, dict);
+    std::vector<uintptr_t> ents;
+    read_dict(pid, dict, ents);
+    int n = 0;
+    for (uintptr_t v : ents) {
+        if (!v || v == local) continue;
+        uint8_t dead = 1;
+        if (!rpm_t(pid, v + Off::Death, dead) || dead > 1) continue;
+        if (dead) continue;
+        Vec3 pos{};
+        if (!rpm_t(pid, v + Off::LastPosition, pos) || !world_pos(pos)) continue;
+        n++;
+    }
+    return n;
 }
 
 struct MapsReg { uintptr_t start, end; char perms[8]; std::string path; };
@@ -103,10 +126,56 @@ static bool read_maps(pid_t pid, std::vector<MapsReg>& out) {
     return !out.empty();
 }
 
-/* One-shot scan. Cached after first hit. No class-name search. */
+static bool read_dict_layout(pid_t pid, uintptr_t dict, uintptr_t entriesOff, uintptr_t countOff,
+                             uintptr_t stride, uintptr_t valueOff, std::vector<uintptr_t>& out) {
+    out.clear();
+    if (!looks_ptr(dict)) return false;
+    uintptr_t entries = 0;
+    int count = 0;
+    if (!rpm_t(pid, dict + entriesOff, entries) || !looks_ptr(entries)) return false;
+    if (!rpm_t(pid, dict + countOff, count) || count <= 0 || count > 32) return false;
+    int maxLen = 0;
+    if (!rpm_t(pid, entries + Off::ArrLen, maxLen) || maxLen <= 0 || maxLen > 512) return false;
+    const uintptr_t data = entries + Off::ArrData;
+    for (int i = 0; i < maxLen; ++i) {
+        const uintptr_t e = data + (uintptr_t)i * stride;
+        int hash = 0;
+        uintptr_t value = 0;
+        if (!rpm_t(pid, e, hash) || hash < 0) continue;
+        if (!rpm_t(pid, e + valueOff, value) || !looks_ptr(value)) continue;
+        out.push_back(value);
+        if ((int)out.size() >= count) break;
+    }
+    return !out.empty();
+}
+
+static bool read_dict(pid_t pid, uintptr_t dict, std::vector<uintptr_t>& out) {
+    if (read_dict_layout(pid, dict, 0x18, 0x20, 24, 0x10, out)) return true;
+    if (read_dict_layout(pid, dict, 0x10, 0x18, 24, 0x10, out)) return true;
+    if (read_dict_layout(pid, dict, 0x18, 0x20, 16, 0x08, out)) return true;
+    return false;
+}
+
+static bool read_list(pid_t pid, uintptr_t list, std::vector<uintptr_t>& out) {
+    out.clear();
+    if (!looks_ptr(list)) return false;
+    uintptr_t items = 0;
+    int size = 0;
+    if (!rpm_t(pid, list + 0x10, items) || !looks_ptr(items)) return false;
+    if (!rpm_t(pid, list + 0x18, size) || size <= 0 || size > 32) return false;
+    for (int i = 0; i < size; ++i) {
+        uintptr_t v = 0;
+        if (rpm_t(pid, items + Off::ArrData + (uintptr_t)i * 8, v) && looks_ptr(v))
+            out.push_back(v);
+    }
+    return !out.empty();
+}
+
+/* One-shot scan. Keep the hit with the most usable entities. */
 static uintptr_t resolve_bm(pid_t pid) {
     uintptr_t cached = g_bm.load();
-    if (cached && is_battle_manager(pid, cached)) return cached;
+    if (cached && is_battle_manager(pid, cached) && count_usable(pid, cached) > 0)
+        return cached;
 
     std::vector<MapsReg> maps;
     if (!read_maps(pid, maps)) {
@@ -114,21 +183,22 @@ static uintptr_t resolve_bm(pid_t pid) {
         return 0;
     }
 
-    int rpmOk = 0, rpmFail = 0, cand = 0;
-    uintptr_t found = 0;
+    struct Hit { uintptr_t inst; int usable; int dictCount; Vec3 lp; };
+    std::vector<Hit> hits;
+    int rpmOk = 0, rpmFail = 0, cand = 0, mapsTried = 0;
     const size_t chunk = 256 * 1024;
-    int mapsTried = 0;
 
     for (const auto& m : maps) {
         if (m.perms[0] != 'r' || m.perms[1] != 'w') continue;
         if (m.start < 0x7400000000ULL || m.start >= 0x7C00000000ULL) continue;
         if (m.end <= m.start) continue;
         const size_t sz = (size_t)(m.end - m.start);
-        if (sz < 0x80 || sz > 16 * 1024 * 1024) continue;
-        if (++mapsTried > 14) break;
+        if (sz < 0x80) continue;
+        if (++mapsTried > 40) break;
 
-        for (uintptr_t off = 0; off < sz && off < 2 * 1024 * 1024; off += chunk) {
-            const size_t n = std::min(chunk, (size_t)(sz - off));
+        const size_t scan = std::min(sz, (size_t)8 * 1024 * 1024);
+        for (uintptr_t off = 0; off < scan; off += chunk) {
+            const size_t n = std::min(chunk, scan - off);
             std::vector<uint8_t> buf(n);
             if (!rpm(pid, m.start + off, buf.data(), n)) {
                 rpmFail++;
@@ -142,65 +212,67 @@ static uintptr_t resolve_bm(pid_t pid) {
                 if (!heap_ptr(local) || !heap_ptr(dict)) continue;
                 cand++;
                 const uintptr_t inst = m.start + off + i;
-                if (is_battle_manager(pid, inst)) {
-                    found = inst;
-                    break;
-                }
+                Vec3 lp{};
+                int dc = 0;
+                if (!is_battle_manager(pid, inst, &lp, &dc)) continue;
+                const int usable = count_usable(pid, inst);
+                hits.push_back({inst, usable, dc, lp});
+                if (hits.size() >= 24) break;
             }
-            if (found) break;
+            if (hits.size() >= 24) break;
         }
-        if (found) break;
+        if (hits.size() >= 24) break;
+    }
+
+    uintptr_t found = 0;
+    int bestUse = -1;
+    Hit best{};
+    for (const auto& h : hits) {
+        int score = h.usable * 10 + h.dictCount + (h.inst >= 0x7440000000ULL ? 3 : 0);
+        if (h.usable > bestUse || (h.usable == bestUse && h.inst > best.inst)) {
+            bestUse = h.usable;
+            best = h;
+            found = h.inst;
+            (void)score;
+        }
+    }
+    if (bestUse <= 0 && !hits.empty()) {
+        best = hits.back();
+        for (const auto& h : hits)
+            if (h.inst > best.inst) best = h;
+        found = best.inst;
     }
 
     std::ostringstream os;
     os << "LIBTOOL ESP RESOLVE (external APK)\n";
-    os << "method=one-shot heap object scan (no class-name walk)\n";
+    os << "method=score heap objects by usable entities\n";
     os << "maps=" << maps.size() << " heap_tried=" << mapsTried
        << " rpm_ok=" << rpmOk << " rpm_fail=" << rpmFail
-       << " candidates=" << cand << "\n";
-    os << "BattleManager.Instance=0x" << std::hex << found << std::dec
-       << (found ? " OK\n" : " FAIL\n");
-    os << "FIELDS (from working LibTool esp_resolve.txt)\n";
-    os << "  m_LocalPlayerShow=0x48\n";
-    os << "  m_dicPlayerShow=0x60\n";
-    os << "  m_dicMonsterShow=0x68\n";
-    os << "  LastPosition=0x3F4  m_ID=0x18C  m_bDeath=0xC5\n";
-    os << "  m_bSameCampType=0x2A9  m_Hp=0x1A4  m_HpMax=0x1A8\n";
-    if (rpmFail && !rpmOk)
-        os << "WHY FAIL: process_vm_readv blocked. Overlay UID cannot read the game.\n";
-    else if (!found)
-        os << "WHY FAIL: no object had local pos + player dict. Enter a match, then Resolve.\n";
+       << " candidates=" << cand << " hits=" << hits.size() << "\n";
+    os << "BattleManager.Instance=0x" << std::hex << found << std::dec;
+    if (found)
+        os << " OK usable=" << best.usable << " dict=" << best.dictCount
+           << " lp=" << best.lp.x << "," << best.lp.z << "\n";
     else
-        os << "WHY OK: same ShowEntity/BattleManager layout as LibTool ESP.\n";
+        os << " FAIL\n";
+    for (size_t i = 0; i < hits.size() && i < 8; ++i)
+        os << "  hit[" << i << "]=0x" << std::hex << hits[i].inst << std::dec
+           << " usable=" << hits[i].usable << " dict=" << hits[i].dictCount << "\n";
+    os << "FIELDS m_LocalPlayerShow=0x48 m_dicPlayerShow=0x60 LastPosition=0x3F4\n";
+    if (!found)
+        os << "WHY FAIL: no BattleManager-like object. Open a match, tap Resolve.\n";
+    else if (best.usable <= 0)
+        os << "WHY WEAK: Instance has local pos but 0 other living entities. Dict walk or camp/death filter.\n";
+    else
+        os << "WHY OK: picked the Instance with the most living entities.\n";
     g_log = os.str();
     g_bm.store(found);
     return found;
 }
 
-static bool read_dict(pid_t pid, uintptr_t dict, std::vector<uintptr_t>& out) {
-    out.clear();
-    if (!looks_ptr(dict)) return false;
-    uintptr_t entries = 0;
-    int count = 0;
-    if (!rpm_t(pid, dict + Off::DictEntries, entries) || !looks_ptr(entries)) return false;
-    if (!rpm_t(pid, dict + Off::DictCount, count) || count <= 0 || count > 256) return false;
-    int maxLen = 0;
-    if (!rpm_t(pid, entries + Off::ArrLen, maxLen) || maxLen <= 0 || maxLen > 512) return false;
-    const uintptr_t data = entries + Off::ArrData;
-    for (int i = 0; i < maxLen; ++i) {
-        const uintptr_t e = data + (uintptr_t)i * Off::EntryStride;
-        int hash = 0;
-        uintptr_t value = 0;
-        if (!rpm_t(pid, e + Off::EntryHash, hash) || hash < 0) continue;
-        if (!rpm_t(pid, e + Off::EntryValue, value) || !looks_ptr(value)) continue;
-        out.push_back(value);
-        if ((int)out.size() >= count) break;
-    }
-    return !out.empty();
-}
-
 static std::string snapshot(pid_t pid) {
-    uintptr_t bm = resolve_bm(pid);
+    uintptr_t cached = g_bm.load();
+    uintptr_t bm = (cached && is_battle_manager(pid, cached)) ? cached : resolve_bm(pid);
     std::ostringstream os;
     os << "OK|src=libtool|pid=" << pid << "|bm=0x" << std::hex << bm << std::dec;
 
@@ -219,6 +291,11 @@ static std::string snapshot(pid_t pid) {
     uintptr_t dict = 0;
     rpm_t(pid, bm + Off::DicPlayerShow, dict);
     read_dict(pid, dict, ents);
+    if (ents.empty()) {
+        uintptr_t list = 0;
+        rpm_t(pid, bm + 0x70, list);
+        read_list(pid, list, ents);
+    }
     uintptr_t md = 0;
     std::vector<uintptr_t> monsters;
     rpm_t(pid, bm + Off::DicMonsterShow, md);
@@ -226,22 +303,34 @@ static std::string snapshot(pid_t pid) {
 
     struct Row { int id, hp, hpMax, kind; float x, y, z; };
     std::vector<Row> rows;
-    auto take = [&](uintptr_t v, int kind) {
-        if (!v || v == local) return;
-        uint8_t dead = 1, camp = 1;
-        if (!rpm_t(pid, v + Off::Death, dead) || dead) return;
-        if (!rpm_t(pid, v + Off::SameCamp, camp) || camp) return;
+    int skipLocal = 0, skipDead = 0, skipCamp = 0, skipPos = 0, walked = 0;
+    auto take = [&](uintptr_t v, int kind, bool applyCamp) {
+        if (!v) return;
+        walked++;
+        if (v == local) { skipLocal++; return; }
+        uint8_t dead = 1, camp = 0;
+        if (!rpm_t(pid, v + Off::Death, dead) || dead > 1) { skipPos++; return; }
+        if (dead) { skipDead++; return; }
+        if (applyCamp) {
+            if (rpm_t(pid, v + Off::SameCamp, camp) && camp == 1) { skipCamp++; return; }
+        }
         Vec3 pos{};
-        if (!rpm_t(pid, v + Off::LastPosition, pos) || !world_pos(pos)) return;
+        if (!rpm_t(pid, v + Off::LastPosition, pos) || !world_pos(pos)) { skipPos++; return; }
         int id = 0, hp = 0, hpMax = 0;
         rpm_t(pid, v + Off::EntityId, id);
         rpm_t(pid, v + Off::Hp, hp);
         rpm_t(pid, v + Off::HpMax, hpMax);
         rows.push_back({id, hp, hpMax, kind, pos.x, pos.y, pos.z});
     };
-    for (uintptr_t v : ents) take(v, 0);
-    for (uintptr_t v : monsters) take(v, 1);
+    for (uintptr_t v : ents) take(v, 0, true);
+    if (rows.empty())
+        for (uintptr_t v : ents) take(v, 0, false);
+    for (uintptr_t v : monsters) take(v, 1, true);
 
+    os << "|dict=0x" << std::hex << dict << std::dec
+       << "|walked=" << walked
+       << "|skipL=" << skipLocal << "|skipD=" << skipDead
+       << "|skipC=" << skipCamp << "|skipP=" << skipPos;
     os << "|count=" << rows.size() << "|proj=0|";
     for (size_t i = 0; i < rows.size(); ++i) {
         if (i) os << ";";
@@ -252,6 +341,8 @@ static std::string snapshot(pid_t pid) {
            << meters << "," << rows[i].hp << "," << rows[i].hpMax << ","
            << (rows[i].kind ? "M" : "P");
     }
+    if (rows.empty())
+        os << "stage=empty";
     return os.str();
 }
 
