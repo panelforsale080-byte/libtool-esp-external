@@ -115,7 +115,11 @@ class MainActivity : AppCompatActivity() {
             val r = nativeResolve()
             EspState.resolveLog = r
             append(r)
-            status.text = if (r.contains("Instance=0x0") || r.contains(" FAIL")) "Resolve failed" else "Resolved"
+            status.text = when {
+                r.contains("READY=1") && r.contains("Instance NULL") -> "Klass OK · Instance NULL (open a match)"
+                r.contains("READY=1") -> "Resolved"
+                else -> "Resolve failed"
+            }
         }
 
         findViewById<Button>(R.id.btnEsp).setOnClickListener {

@@ -1,0 +1,61 @@
+ESP RESOLVE LOG
+source=same-process IL2CPP FindClass/getField/getMethod
+runtime_ready=1
+
+CLASSES
+  UnityEngine.Camera  FOUND
+  BattleData  FOUND
+  BattleBridge  FOUND
+  BattleManager  FOUND
+  ShowEntity  FOUND
+  ShowPlayer  FOUND
+  LogicBattleManager  FOUND
+  Battle.LogicFighter  FOUND
+  Battle.LogicSkillComp  FOUND
+  Battle.CoolDownComp  FOUND
+  Battle.CoolDownData  FOUND
+  Battle.ShowOwnSkillComp  FOUND
+  ShowSkillData  FOUND
+
+FIELDS (runtime offset, dump.cs fallback, value used)
+  BattleManager.m_LocalPlayerShow  resolved=0x48  dump=0x48  used=0x48  runtime
+  BattleManager.m_dicPlayerShow  resolved=0x60  dump=0x60  used=0x60  runtime
+  BattleManager.m_dicMonsterShow  resolved=0x68  dump=0x68  used=0x68  runtime
+  ShowEntity.<LastPosition>k__BackingField  resolved=0x3f4  dump=0x3f4  used=0x3f4  runtime
+  ShowEntity.m_ID  resolved=0x18c  dump=0x18c  used=0x18c  runtime
+  ShowEntity.m_bDeath  resolved=0xc5  dump=0xc5  used=0xc5  runtime
+  ShowEntity.m_bSameCampType  resolved=0x2a9  dump=0x2a9  used=0x2a9  runtime
+  ShowEntity.m_Hp  resolved=0x1a4  dump=0x1a4  used=0x1a4  runtime
+  ShowEntity.m_HpMax  resolved=0x1a8  dump=0x1a8  used=0x1a8  runtime
+  ShowEntity.m_OwnSkillComp  resolved=0x108  dump=0x108  used=0x108  runtime
+  Battle.LogicFighter.m_SkillComp  resolved=0x4f0  dump=0x4f0  used=0x4f0  runtime
+  Battle.LogicSkillComp.m_CoolDownComp  resolved=0xb0  dump=0xb0  used=0xb0  runtime
+  Battle.CoolDownComp.m_DicCoolInfo  resolved=0x18  dump=0x18  used=0x18  runtime
+  Battle.ShowOwnSkillComp.m_SkillList  resolved=0x10  dump=0x10  used=0x10  runtime
+  Battle.ShowOwnSkillComp.skillUseTypeList  resolved=0x18  dump=0x18  used=0x18  runtime
+  ShowSkillData.m_TranID  resolved=0x88  dump=0x88  used=0x88  runtime
+  ShowPlayer.m_iSummonSkillId  resolved=0x984  dump=0x984  used=0x984  runtime
+
+STATICS
+  BattleData.m_BattleBridge  live pointer
+  BattleManager.Instance  live pointer  (working LibTool sample 0x74690a67e0)
+  LogicBattleManager.Instance  live pointer
+
+WHY THIS WORKS
+  1. IL2CPP FindClass + getField + getMethod
+  2. Field offsets from live metadata; dump.cs fallback
+  3. Players/monsters from BattleManager dictionaries
+  4. Local player is BattleManager.m_LocalPlayerShow
+  5. Position is ShowEntity.<LastPosition>k__BackingField
+  6. Filter: skip m_bDeath and m_bSameCampType
+
+DUMP.CS FALLBACK TABLE
+  BattleManager.m_LocalPlayerShow=0x48  dump.cs:684144
+  BattleManager.m_dicPlayerShow=0x60    dump.cs:684147
+  BattleManager.m_dicMonsterShow=0x68   dump.cs:684148
+  ShowEntity.LastPosition=0x3F4         dump.cs:667913
+  ShowEntity.m_ID=0x18C                 dump.cs:667783
+  ShowEntity.m_bDeath=0xC5              dump.cs:667749
+  ShowEntity.m_bSameCampType=0x2A9      dump.cs:667847
+  ShowEntity.m_Hp=0x1A4                 dump.cs:667789
+  ShowEntity.m_HpMax=0x1A8              dump.cs:667790
