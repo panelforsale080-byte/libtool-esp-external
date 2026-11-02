@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#FF101014">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="LibTool ESP  ·  External"
+        android:textColor="#FFFFFFFF"
+        android:textSize="22sp"
+        android:textStyle="bold"/>
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enter own-app PID"
+        android:textColor="#FF9E9E9E"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"/>
+
+    <EditText
+        android:id="@+id/pidInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:hint="Manual PID"
+        android:inputType="number"
+        android:singleLine="true"
+        android:textColor="#FFFFFFFF"
+        android:textColorHint="#FF888888"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/btnApply" android:layout_width="0dp"
+            android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="Apply PID"/>
+        <Button android:id="@+id/btnResolve" android:layout_width="0dp"
+            android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="Resolve"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/btnEsp" android:layout_width="0dp"
+            android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="ESP ON"/>
+        <Button android:id="@+id/btnOverlay" android:layout_width="0dp"
+            android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="Overlay"/>
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnCopy"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Copy resolve log"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <CheckBox android:id="@+id/chkBox" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="Box" android:checked="true"
+            android:textColor="#FFFFFFFF"/>
+        <CheckBox android:id="@+id/chkLine" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="Line" android:checked="true"
+            android:textColor="#FFFFFFFF"/>
+        <CheckBox android:id="@+id/chkHp" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="HP" android:checked="true"
+            android:textColor="#FFFFFFFF"/>
+        <CheckBox android:id="@+id/chkName" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="Name" android:checked="true"
+            android:textColor="#FFFFFFFF"/>
+        <CheckBox android:id="@+id/chkDist" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="Dist" android:checked="true"
+            android:textColor="#FFFFFFFF"/>
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingTop="8dp">
+        <TextView
+            android:id="@+id/logText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FFBDBDBD"
+            android:textSize="11sp"
+            android:fontFamily="monospace"/>
+    </ScrollView>
+</LinearLayout>
