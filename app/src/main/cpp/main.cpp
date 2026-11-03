@@ -621,6 +621,20 @@ static std::string target_error(int pid) {
     return "";
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ownapp_esp_MainActivity_nativeProbeRead(JNIEnv *, jobject, jint pid) {
+    if (pid <= 0) return JNI_FALSE;
+    std::vector<MapsReg> maps;
+    if (!read_maps(pid, maps)) return JNI_FALSE;
+    for (const auto &r : maps) {
+        if (r.perms[0] != 'r' || r.end <= r.start) continue;
+        uint8_t scratch[8] = {};
+        if (rpm(pid, r.start, scratch, sizeof(scratch)))
+            return JNI_TRUE;
+    }
+    return JNI_FALSE;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_ownapp_esp_MainActivity_nativeSetPid(JNIEnv *, jobject, jint pid) {
     std::lock_guard<std::mutex> lock(g_mu);

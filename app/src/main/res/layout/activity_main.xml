@@ -18,17 +18,23 @@
         android:id="@+id/statusText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Enter own-app PID"
+        android:text="External ESP — no libTool inject into MLBB APK"
         android:textColor="#FF9E9E9E"
         android:paddingTop="8dp"
         android:paddingBottom="8dp"/>
+
+    <Button
+        android:id="@+id/btnFindMlbb"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Find MLBB (UnityKillsMe)"/>
 
     <EditText
         android:id="@+id/pidInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="48dp"
-        android:hint="Manual PID"
+        android:hint="Or manual Unity PID"
         android:inputType="number"
         android:singleLine="true"
         android:textColor="#FFFFFFFF"
@@ -40,7 +46,7 @@
         android:orientation="horizontal">
         <Button android:id="@+id/btnApply" android:layout_width="0dp"
             android:layout_height="wrap_content" android:layout_weight="1"
-            android:text="Apply PID"/>
+            android:text="Connect PID"/>
         <Button android:id="@+id/btnResolve" android:layout_width="0dp"
             android:layout_height="wrap_content" android:layout_weight="1"
             android:text="Resolve"/>

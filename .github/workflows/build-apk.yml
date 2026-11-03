@@ -1,22 +1,43 @@
 name: Build APK
+
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Android SDK + NDK
+        run: |
+          SDKM="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses >/dev/null || true
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0" "platform-tools" "ndk;28.2.13676358"
+
       - run: chmod +x gradlew
+
       - run: ./gradlew assembleDebug --stacktrace
+
+      - name: Verify application APK
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt2" dump badging "$APK" | grep -q "package: name='ownapp.esp'"
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt2" dump badging "$APK" | grep -q "launchable-activity"
+          unzip -l "$APK" | grep -E 'lib/.*/LibToolEsp\.so'
+          echo "OK: external ESP main application APK"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: LibTool-ESP-external-apk
+          name: mlbb-external-esp-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
